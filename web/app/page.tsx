@@ -22,6 +22,7 @@ export default function Home() {
   const [authReady, setAuthReady] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [authMode, setAuthMode] = useState<"login" | "signup">("login");
   const [authMessage, setAuthMessage] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   useEffect(() => {
@@ -30,15 +31,18 @@ export default function Home() {
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user ?? null));
     return () => listener.subscription.unsubscribe();
   }, []);
-  const login = async (event: React.FormEvent) => {
+  const submitAuth = async (event: React.FormEvent) => {
     event.preventDefault(); setAuthBusy(true); setAuthMessage("");
     if (!supabase) { setAuthMessage("Konfigurasi Supabase belum tersedia."); setAuthBusy(false); return; }
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) setAuthMessage(error.message); else setPassword("");
+    const result = authMode === "login"
+      ? await supabase.auth.signInWithPassword({ email, password })
+      : await supabase.auth.signUp({ email, password });
+    if (result.error) setAuthMessage(result.error.message);
+    else { setPassword(""); setAuthMessage(authMode === "signup" ? "Akun berhasil dibuat. Cek email Anda jika konfirmasi email aktif." : ""); }
     setAuthBusy(false);
   };
   if (!authReady) return <main className="auth-screen"><div className="auth-card">Memuat sesi...</div></main>;
-  if (!user) return <main className="auth-screen"><form className="auth-card" onSubmit={login}><span className="brand-mark">MK</span><h1>Masuk ke Mapping Keuangan</h1><p className="muted">Gunakan akun Supabase Anda untuk menyimpan hasil audit.</p><label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} required /></label>{authMessage && <p className="auth-error" role="alert">{authMessage}</p>}<button className="button primary" disabled={authBusy}>{authBusy ? "Memeriksa..." : "Masuk"}</button></form></main>;
+  if (!user) return <main className="auth-screen"><section className="auth-layout"><div className="auth-visual"><span className="auth-visual-mark">MK</span><div><p className="auth-kicker">MAPPING KEUANGAN</p><h1>Audit laporan<br />lebih sederhana.</h1><p>Bandingkan data Excel dan PDF dalam satu workspace yang rapi.</p></div><div className="auth-tiles"><span>✓</span><span>▤</span><span>↗</span></div></div><form className="auth-card" onSubmit={submitAuth}><div className="auth-tabs"><button type="button" className={authMode === "login" ? "selected" : ""} onClick={() => { setAuthMode("login"); setAuthMessage(""); }}>Masuk</button><button type="button" className={authMode === "signup" ? "selected" : ""} onClick={() => { setAuthMode("signup"); setAuthMessage(""); }}>Daftar</button></div><span className="brand-mark">MK</span><h2>{authMode === "login" ? "Selamat datang kembali" : "Buat akun baru"}</h2><p className="muted">{authMode === "login" ? "Masuk untuk melanjutkan audit keuangan Anda." : "Daftar untuk menyimpan riwayat audit Anda."}</p><label>Email<input type="email" value={email} onChange={(event) => setEmail(event.target.value)} autoComplete="email" required /></label><label>Password<input type="password" value={password} onChange={(event) => setPassword(event.target.value)} autoComplete={authMode === "login" ? "current-password" : "new-password"} required /></label>{authMessage && <p className={authMessage.startsWith("Akun") ? "auth-success" : "auth-error"} role="status">{authMessage}</p>}<button className="button primary" disabled={authBusy}>{authBusy ? "Memproses..." : authMode === "login" ? "Masuk" : "Daftar"}</button><p className="auth-switch">{authMode === "login" ? "Belum punya akun? " : "Sudah punya akun? "}<button type="button" onClick={() => { setAuthMode(authMode === "login" ? "signup" : "login"); setAuthMessage(""); }}>{authMode === "login" ? "Daftar sekarang" : "Masuk di sini"}</button></p></form></section></main>;
   const inputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]);
   const [data, setData] = useState<AuditData | null>(null);
