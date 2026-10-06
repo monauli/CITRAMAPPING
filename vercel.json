@@ -1,0 +1,15 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "buildCommand": "npm --prefix web run build",
+  "installCommand": "npm --prefix web ci",
+  "outputDirectory": "web/.next",
+  "rewrites": [
+    { "source": "/api/audit", "destination": "/api/audit_serverless" }
+  ],
+  "functions": {
+    "api/audit_serverless.py": {
+      "maxDuration": 300,
+      "excludeFiles": "{dataexcelpdfreportlapkeucamjoperiodejanuarisdag/**,output/**,tmp/**,tests/**}"
+    }
+  }
+}
