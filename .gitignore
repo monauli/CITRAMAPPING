@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.sqlite3
+*.exe
+web/node_modules/
+web/.next/
+web/.env.local
+web/tsconfig.tsbuildinfo
+dataexcelpdfreportlapkeucamjoperiodejanuarisdag/
+nimbalyst-local/
