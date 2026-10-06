@@ -36,6 +36,8 @@ def current_user(token: str):
 
 
 @app.post("/")
+@app.post("/api/audit_serverless")
+@app.post("/api/audit_serverless.py")
 async def audit(files: list[UploadFile] = File(...), authorization: str | None = Header(default=None)):
     if not authorization or not authorization.lower().startswith("bearer "):
         raise HTTPException(status_code=401, detail="Login Supabase diperlukan sebelum menjalankan audit.")
