@@ -387,8 +387,12 @@ def create_corrected_pdf(pdf_path, beda_rows, output_path):
         page.apply_redactions()
         for record, replacement in page_replacements:
             font_size = max(6, min(12, record["bottom"] - record["top"] + 2))
+            available_width = max(20, record["x1"] - record["x0"])
+            while font_size > 6 and fitz.get_text_length(replacement, fontname="helv", fontsize=font_size) > available_width:
+                font_size -= 0.25
+            text_width = fitz.get_text_length(replacement, fontname="helv", fontsize=font_size)
             page.insert_text(
-                (record["x0"], record["top"] + font_size - 1),
+                (record["x1"] - text_width, record["top"] + font_size - 1),
                 replacement,
                 fontsize=font_size,
                 fontname="helv",

@@ -8,3 +8,5 @@ web/.env.local
 web/tsconfig.tsbuildinfo
 dataexcelpdfreportlapkeucamjoperiodejanuarisdag/
 nimbalyst-local/
+output/
+tmp/
