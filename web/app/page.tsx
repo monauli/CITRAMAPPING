@@ -60,11 +60,35 @@ const monthLabel = (period: string) =>
     new Date(`${period}-01T00:00:00`),
   );
 const FILE_BUCKET = "mapping-files";
+const monthNumbers: Record<string, number> = {
+  januari: 1,
+  februari: 2,
+  maret: 3,
+  april: 4,
+  mei: 5,
+  juni: 6,
+  juli: 7,
+  agustus: 8,
+  september: 9,
+  oktober: 10,
+  november: 11,
+  desember: 12,
+};
 const fileNameOnly = (file: File) =>
   (file.webkitRelativePath || file.name)
     .replaceAll("\\", "/")
     .split("/")
     .pop() || file.name;
+const periodFromFileName = (name: string) => {
+  const match = name.toLowerCase().match(
+    /(januari|februari|maret|april|mei|juni|juli|agustus|september|oktober|november|desember)[ -]+(20\d{2})/,
+  );
+  return match
+    ? `${match[2]}-${String(monthNumbers[match[1]]).padStart(2, "0")}`
+    : "";
+};
+const periodsFromFileNames = (names: string[]) =>
+  [...new Set(names.map(periodFromFileName).filter(Boolean))].sort();
 
 export default function Home() {
   const [user, setUser] = useState<User | null>(null),
@@ -78,6 +102,8 @@ export default function Home() {
     excelInputRef = useRef<HTMLInputElement>(null),
     pdfInputRef = useRef<HTMLInputElement>(null);
   const [files, setFiles] = useState<File[]>([]),
+    [storedFileNames, setStoredFileNames] = useState<string[]>([]),
+    [availablePeriods, setAvailablePeriods] = useState<string[]>([]),
     [data, setData] = useState<AuditData | null>(null),
     [period, setPeriod] = useState(""),
     [category, setCategory] = useState<Category>("Semua"),
@@ -121,28 +147,39 @@ export default function Home() {
         .from(FILE_BUCKET)
         .list(user.id, { limit: 100 });
       if (cancelled || error || !objects?.length) return;
+      const names = objects.filter((object) => object.name).map((object) => object.name);
+      const periods = periodsFromFileNames(names);
+      setStoredFileNames(names);
+      setAvailablePeriods(periods);
+      const firstPeriod = periods[0] ?? "";
+      const selectedNames = [
+        names.find((name) => name.toLowerCase().endsWith(".xlsx")),
+        ...names.filter(
+          (name) =>
+            name.toLowerCase().endsWith(".pdf") &&
+            (!firstPeriod || periodFromFileName(name) === firstPeriod),
+        ),
+      ].filter((name): name is string => Boolean(name));
       const restored = (
         await Promise.all(
-          objects
-            .filter((object) => object.name)
-            .map(async (object) => {
-              const { data: blob } = await supabase!.storage
-                .from(FILE_BUCKET)
-                .download(`${user.id}/${object.name}`);
-              return blob
-                ? new File([blob], object.name, {
-                    type: blob.type || "application/octet-stream",
-                  })
-                : null;
-            }),
+          selectedNames.map(async (name) => {
+            const { data: blob } = await supabase!.storage
+              .from(FILE_BUCKET)
+              .download(`${user.id}/${name}`);
+            return blob
+              ? new File([blob], name, {
+                  type: blob.type || "application/octet-stream",
+                })
+              : null;
+          }),
         )
       ).filter((file): file is File => Boolean(file));
       if (!cancelled && restored.length) {
         setFiles(restored);
         setMessage(
-          `${restored.length} file tersimpan otomatis. Audit dijalankan...`,
+          `${restored.length} file untuk ${firstPeriod ? monthLabel(firstPeriod) : "periode aktif"} dimuat. Audit dijalankan...`,
         );
-        await runAudit(restored);
+        await runAudit(restored, false);
       }
     })();
     return () => {
@@ -174,7 +211,7 @@ export default function Home() {
     setAuthBusy(false);
   };
   const rows = data?.rows ?? [],
-    periods = data?.periods ?? [],
+    periods = availablePeriods.length ? availablePeriods : data?.periods ?? [],
     currentPeriod = period || periods[0] || "";
   const periodRows = useMemo(
     () => rows.filter((row) => row.period === currentPeriod),
@@ -352,6 +389,8 @@ export default function Home() {
       /\.(xlsx|pdf)$/i.test(file.name),
     );
     setFiles(selected);
+    setStoredFileNames(selected.map(fileNameOnly));
+    setAvailablePeriods(periodsFromFileNames(selected.map(fileNameOnly)));
     setMessage(
       selected.length
         ? `${selected.length} file dari folder siap disimpan dan diaudit.`
@@ -366,6 +405,10 @@ export default function Home() {
       ...current.filter((file) => !file.name.toLowerCase().endsWith(".xlsx")),
       ...selected,
     ]);
+    setStoredFileNames((current) => [
+      ...current.filter((name) => !name.toLowerCase().endsWith(".xlsx")),
+      ...selected.map(fileNameOnly),
+    ]);
     setMessage(
       selected.length
         ? "File Excel siap disimpan dan diaudit."
@@ -376,17 +419,28 @@ export default function Home() {
     const selected = Array.from(event.target.files ?? []).filter((file) =>
       file.name.toLowerCase().endsWith(".pdf"),
     );
+    const selectedNames = selected.map(fileNameOnly);
     setFiles((current) => [
       ...current.filter((file) => !file.name.toLowerCase().endsWith(".pdf")),
       ...selected,
     ]);
+    setStoredFileNames((current) => [
+      ...current.filter((name) => !name.toLowerCase().endsWith(".pdf")),
+      ...selectedNames,
+    ]);
+    setAvailablePeriods(
+      periodsFromFileNames([
+        ...storedFileNames.filter((name) => !name.toLowerCase().endsWith(".pdf")),
+        ...selectedNames,
+      ]),
+    );
     setMessage(
       selected.length
         ? `${selected.length} file PDF siap disimpan dan diaudit.`
         : "Pilih file PDF.",
     );
   };
-  const runAudit = async (inputFiles = files) => {
+  const runAudit = async (inputFiles = files, persist = true) => {
     const hasExcel = inputFiles.some((file) =>
         file.name.toLowerCase().endsWith(".xlsx"),
       ),
@@ -429,7 +483,7 @@ export default function Home() {
       setData(result);
       setPeriod(result.periods[0] ?? "");
       setSaved(true);
-      if (supabase && user) {
+      if (persist && supabase && user) {
         const uploads = await Promise.all(
           inputFiles.map((file) =>
             supabase!.storage
@@ -455,6 +509,50 @@ export default function Home() {
         error instanceof Error ? error.message : "Audit gagal dijalankan.",
       );
     } finally {
+      setBusy(false);
+    }
+  };
+  const selectPeriod = async (nextPeriod: string) => {
+    setPeriod(nextPeriod);
+    if (busy || !nextPeriod) return;
+    const names = storedFileNames.length ? storedFileNames : files.map(fileNameOnly);
+    const selectedNames = [
+      names.find((name) => name.toLowerCase().endsWith(".xlsx")),
+      ...names.filter(
+        (name) =>
+          name.toLowerCase().endsWith(".pdf") &&
+          periodFromFileName(name) === nextPeriod,
+      ),
+    ].filter((name): name is string => Boolean(name));
+    if (!selectedNames.some((name) => name.toLowerCase().endsWith(".pdf"))) {
+      setMessage(`PDF untuk ${monthLabel(nextPeriod)} belum tersedia.`);
+      return;
+    }
+    setBusy(true);
+    try {
+      const selectedFiles = await Promise.all(
+        selectedNames.map(async (name) => {
+          const local = files.find((file) => fileNameOnly(file) === name);
+          if (local) return local;
+          if (!supabase || !user) return null;
+          const { data: blob } = await supabase.storage
+            .from(FILE_BUCKET)
+            .download(`${user.id}/${name}`);
+          return blob
+            ? new File([blob], name, { type: blob.type || "application/octet-stream" })
+            : null;
+        }),
+      );
+      const ready = selectedFiles.filter((file): file is File => Boolean(file));
+      if (!ready.some((file) => file.name.toLowerCase().endsWith(".xlsx"))) {
+        setBusy(false);
+        setMessage("File Excel tersimpan tidak ditemukan.");
+        return;
+      }
+      setFiles(ready);
+      await runAudit(ready, false);
+    } catch (error) {
+      setMessage(error instanceof Error ? error.message : "Gagal memuat periode.");
       setBusy(false);
     }
   };
@@ -497,6 +595,9 @@ export default function Home() {
             <strong>{user.email?.split("@")[0] || "User"}</strong>
             <small>Supabase account</small>
           </div>
+          <button className="sidebar-logout" onClick={() => supabase?.auth.signOut()} title="Keluar">
+            Keluar
+          </button>
         </div>
       </aside>
       <section className="workspace">
@@ -628,7 +729,7 @@ export default function Home() {
                     <select
                       id="period-select"
                       value={currentPeriod}
-                      onChange={(event) => setPeriod(event.target.value)}
+                      onChange={(event) => void selectPeriod(event.target.value)}
                       disabled={!periods.length}
                     >
                       <option value="">Belum ada periode</option>
